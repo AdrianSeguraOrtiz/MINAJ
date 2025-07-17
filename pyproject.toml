@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["minaj"]
+
+[project]
+name = "MINAJ"
+version = "0.1.0"
+description = "MINAJ - Modular Inference for Network Aggregation and Joint learning"
+authors = [
+    { name = "Adrián Segura Ortiz", email = "adrianseor.99@gmail.com" }
+]
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10.7,<3.11"
+dependencies = [
+    "geneci @ git+https://github.com/AdrianSeguraOrtiz/GENECI.git@dev",
+    "pandas >= 2.2.3",
+    "typer >= 0.6.0, <0.7.0",
+    "rich >= 10.11.0, <13.0.0",
+    "leidenalg == 0.10.2",
+    "igraph == 0.11.9",
+    "scikit-learn == 1.7.0",
+    "numpy == 2.2.6"
+]
+
+[project.scripts]
+minaj = "minaj.cli:app"
