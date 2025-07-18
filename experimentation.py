@@ -10,7 +10,7 @@ import pandas as pd
 from geneci.main import (SimpleConsensusCriteria, Technique,
                          generic_list_of_links, infer_network)
 
-from minaj.main import main_modular_inference
+from minaj.main import main_calculate_community_metrics, main_modular_inference
 from minaj.utils import ClusteringAlgorithm
 
 
@@ -172,10 +172,10 @@ for expression_file in expression_data:
 
         ## Calcular precisiones
         df_all_aupr = pd.DataFrame(
-            columns=["Community", "Size", "NumGSLinks", "Technique", "Group", "AUPR"]
+            columns=["Community", "Size", "Density", "Diameter", "Isolation", "Mean Degree", "Median Degree", "Mean Weight", "Median Weight", "Technique", "Group", "AUPR"]
         )
         df_all_auroc = pd.DataFrame(
-            columns=["Community", "Size", "NumGSLinks", "Technique", "Group", "AUROC"]
+            columns=["Community", "Size", "Density", "Diameter", "Isolation", "Mean Degree", "Median Degree", "Mean Weight", "Median Weight", "Technique", "Group", "AUROC"]
         )
         for community_name in community_names:
             ## Comprobar si la comunidad tiene suficientes enlaces positivos en el gold standard
@@ -263,14 +263,23 @@ for expression_file in expression_data:
             )
 
             ## Agregar resultados al DataFrame global
-            community_size = gold_standard.shape[0]
+            metrics = main_calculate_community_metrics(
+                f"{experiment_folder}/global_inference/consensus_global_network.csv",
+                f"{experiment_folder}/modules/networks/partition.json",
+            )
             df_all_aupr = pd.concat(
                 [
                     df_all_aupr,
                     df_aupr.assign(
                         Community=community_name,
-                        Size=community_size,
-                        NumGSLinks=num_gs_ones,
+                        Size=metrics[community_name]["size"],
+                        Density=metrics[community_name]["density"],
+                        Diameter=metrics[community_name]["diameter"],
+                        Isolation=metrics[community_name]["isolation"],
+                        Mean_Degree=metrics[community_name]["mean_degree"],
+                        Median_Degree=metrics[community_name]["median_degree"],
+                        Mean_Weight=metrics[community_name]["mean_weight"],
+                        Median_Weight=metrics[community_name]["median_weight"],
                     ),
                 ],
                 ignore_index=True,
@@ -280,8 +289,14 @@ for expression_file in expression_data:
                     df_all_auroc,
                     df_auroc.assign(
                         Community=community_name,
-                        Size=community_size,
-                        NumGSLinks=num_gs_ones,
+                        Size=metrics[community_name]["size"],
+                        Density=metrics[community_name]["density"],
+                        Diameter=metrics[community_name]["diameter"],
+                        Isolation=metrics[community_name]["isolation"],
+                        Mean_Degree=metrics[community_name]["mean_degree"],
+                        Median_Degree=metrics[community_name]["median_degree"],
+                        Mean_Weight=metrics[community_name]["mean_weight"],
+                        Median_Weight=metrics[community_name]["median_weight"],
                     ),
                 ],
                 ignore_index=True,

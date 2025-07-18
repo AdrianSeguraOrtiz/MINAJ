@@ -1,3 +1,4 @@
+import json
 import multiprocessing
 import random
 import string
@@ -7,14 +8,18 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import List, Optional
 
+import graphistry
+import networkx as nx
+import numpy as np
 import pandas as pd
 from geneci.main import SimpleConsensusCriteria, Technique, infer_network
 from geneci.utils import (cpus_dict, get_expression_data_from_module,
                           simple_consensus)
 from rich import print
 
-from minaj.utils import (ClusteringAlgorithm, read_igraph_from_csv,
-                         split_communities_recursively, write_communities)
+from minaj.utils import (ClusteringAlgorithm, palette_color_for,
+                         read_igraph_from_csv, split_communities_recursively,
+                         write_communities, write_partition)
 
 
 def main_modular_inference(
@@ -353,8 +358,168 @@ def main_cluster_network(
     Main pipeline to read a network, apply community detection, and save results.
     """
     g = read_igraph_from_csv(confidence_list)
-    partition = split_communities_recursively(g, preferred_size, min_size, algorithm=algorithm)
-    print(f"Original network of {g.vcount()} nodes was clustered into {len(set(partition.values()))} communities:")
-    for cid, nodes in pd.Series(partition).value_counts().items():
-        print(f"\t - Community {cid}: {nodes} nodes")
+    partition = split_communities_recursively(
+        g, preferred_size, min_size, algorithm=algorithm
+    )
+    write_partition(partition, output_dir)
     write_communities(g, partition, output_dir)
+    
+    
+def main_calculate_community_metrics(confidence_list: str, partition_file: str) -> dict:
+    """
+    Calculate metrics for each community in the graph.
+    
+    Args:
+        confidence_list (str): Path to the CSV file containing the confidence list.
+        partition_file (str): Path to the JSON file containing the community partition.
+    
+    Returns:
+        dict: Dictionary with community ID as key and metrics as value.
+    """
+    # Load the confidence list and partition data
+    edges = pd.read_csv(confidence_list, header=None, names=["source", "destination", "confidence"])
+    partition_data = json.load(open(partition_file))
+
+    # Create a directed graph from the edges
+    G = nx.DiGraph()
+    for _, row in edges.iterrows():
+        G.add_edge(row["source"], row["destination"], weight=row["confidence"])
+        
+    metrics = {}
+    
+    for comm_id, nodes in partition_data.items():
+        # Create subgraph for the community
+        subgraph = G.subgraph(nodes).copy()
+        
+        # Size: Number of nodes
+        size = len(nodes)
+        
+        # Density: Ratio of actual edges to possible edges
+        num_edges = subgraph.number_of_edges()
+        possible_edges = size * (size - 1)  # Directed graph: n * (n-1)
+        density = num_edges / possible_edges if possible_edges > 0 else 0.0
+        
+        # Diameter: Longest shortest path (only for weakly connected components)
+        try:
+            if nx.is_weakly_connected(subgraph):
+                diameter = nx.diameter(subgraph)
+            else:
+                # For disconnected graphs, compute diameter of largest weakly connected component
+                largest_cc = max(nx.weakly_connected_components(subgraph), key=len)
+                diameter = nx.diameter(subgraph.subgraph(largest_cc))
+        except (nx.NetworkXError, ValueError):
+            diameter = float('inf')  # If no valid path exists
+        
+        # Isolation: Proportion of edges going outside the community
+        external_edges = sum(1 for u, v in G.edges() if (u in nodes and v not in nodes) or (v in nodes and u not in nodes))
+        total_edges = sum(1 for u, v in G.edges() if u in nodes or v in nodes)
+        isolation = external_edges / total_edges if total_edges > 0 else 0.0
+        
+        # Degrees: In-degree + Out-degree for each node
+        degrees = [subgraph.in_degree(n) + subgraph.out_degree(n) for n in nodes]
+        mean_degree = np.mean(degrees) if degrees else 0.0
+        median_degree = np.median(degrees) if degrees else 0.0
+        
+        # Weights: Edge weights within the community
+        weights = [d['weight'] for _, _, d in subgraph.edges(data=True)]
+        mean_weight = np.mean(weights) if weights else 0.0
+        median_weight = np.median(weights) if weights else 0.0
+        
+        metrics[comm_id] = {
+            'size': size,
+            'density': density,
+            'diameter': diameter,
+            'isolation': isolation,
+            'mean_degree': mean_degree,
+            'median_degree': median_degree,
+            'mean_weight': mean_weight,
+            'median_weight': median_weight
+        }
+        
+        # Print metrics for user feedback
+        print(f"Community {comm_id}: Size={size}, Density={density:.3f}, "
+              f"Diameter={diameter}, Isolation={isolation:.3f}, "
+              f"Mean Degree={mean_degree:.2f}, Median Degree={median_degree:.2f}, "
+              f"Mean Weight={mean_weight:.2f}, Median Weight={median_weight:.2f}")  
+    
+    return metrics
+
+
+def main_plot_communities(
+    complete_network: Path,
+    partition: Path,
+    username: str,
+    password: str,
+    weight_threshold: float = 0.1,
+    include_community_metrics: bool = True,
+):
+    """
+    Visualize a directed weighted graph with community coloring using Graphistry.
+
+    Args:
+        complete_network (Path): Path to the network CSV file.
+        partition (Path): Path to the partition JSON file.
+        username (str): Graphistry username.
+        password (str): Graphistry password.
+        weight_threshold (float, optional): Minimum edge weight to include in visualization. Default is 0.1.
+            Adjust this value to filter out weak edges and reduce visual clutter.
+    """
+
+    # 1. Register user in Graphistry
+    graphistry.register(api=3, username=username, password=password)
+
+    # 2. Load network
+    edges = pd.read_csv(complete_network, header=None, names=["source", "destination", "confidence"])
+    edges["linkname"] = edges["source"] + "-->" + edges["destination"]
+    edges = edges[edges["confidence"] > weight_threshold]
+
+    # 3. Get set of nodes
+    nodes_set = set(edges["source"]).union(edges["destination"])
+    nodes = pd.DataFrame({"genename": list(nodes_set)})
+
+    # 4. Load communities from JSON
+    with open(partition) as f:
+        partition_data = json.load(f)
+
+    # 5. Invert communities to get node → community
+    inverted_partition = {node: None for node in nodes["genename"]}
+    for comm_id_str, gene_list in partition_data.items():
+        for gene in gene_list:
+            inverted_partition[gene] = comm_id_str
+
+    # 7. Add community and community metrics to nodes
+    nodes["community"] = nodes["genename"].map(inverted_partition)
+    if include_community_metrics:
+        community_metrics = main_calculate_community_metrics(complete_network, partition)
+        nodes["community_metrics"] = nodes["community"].apply(
+            lambda comm_id: (
+                f"Community: {comm_id}<br>"
+                f"Size: {community_metrics[comm_id]['size']}<br>"
+                f"Density: {community_metrics[comm_id]['density']:.3f}<br>"
+                f"Diameter: {community_metrics[comm_id]['diameter']}<br>"
+                f"Isolation: {community_metrics[comm_id]['isolation']:.3f}<br>"
+                f"Mean Degree: {community_metrics[comm_id]['mean_degree']:.2f}<br>"
+                f"Median Degree: {community_metrics[comm_id]['median_degree']:.2f}<br>"
+                f"Mean Weight: {community_metrics[comm_id]['mean_weight']:.2f}<br>"
+                f"Median Weight: {community_metrics[comm_id]['median_weight']:.2f}"
+            ) if comm_id else "None"
+        )
+    else:
+        nodes["community_metrics"] = "No metrics available"
+
+    # 9. Visualize in Graphistry
+    plot = (
+        graphistry
+        .nodes(nodes, node="genename")
+        .edges(edges, source="source", destination="destination", edge="linkname")
+        .bind(edge_label="linkname", edge_weight="confidence", point_color="community_metrics")
+        .encode_point_color(
+            'community',
+            categorical_mapping={str(c): palette_color_for(c) for c in nodes['community'].unique()},
+            default_mapping="#000000",
+            as_categorical=True
+        )
+        .plot()
+    )
+
+    print(f"Visualization Loaded: {plot}\n")

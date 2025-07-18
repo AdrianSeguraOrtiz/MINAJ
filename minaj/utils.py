@@ -1,10 +1,13 @@
 import csv
+import json
+from collections import defaultdict
 from enum import Enum
 from pathlib import Path
 
 import igraph as ig
 import leidenalg
 import numpy as np
+from matplotlib import pyplot as plt
 from sklearn.cluster import SpectralClustering
 
 
@@ -47,6 +50,7 @@ def read_igraph_from_csv(file_path):
 
     return g
 
+
 def apply_leiden(g):
     """
     Applies the Leiden community detection algorithm using modularity for directed graphs.
@@ -58,11 +62,10 @@ def apply_leiden(g):
         VertexClustering: The partition of the graph into communities.
     """
     return leidenalg.find_partition(
-        g,
-        leidenalg.ModularityVertexPartition,
-        weights="weight"
+        g, leidenalg.ModularityVertexPartition, weights="weight"
     )
-    
+
+
 def apply_spectral(g, n_clusters):
     """
     Applies Spectral Clustering to the graph using the weighted adjacency matrix.
@@ -76,9 +79,7 @@ def apply_spectral(g, n_clusters):
     """
     adj = np.array(g.get_adjacency(attribute="weight").data)
     clustering = SpectralClustering(
-        n_clusters=n_clusters,
-        affinity='precomputed',
-        assign_labels='kmeans'
+        n_clusters=n_clusters, affinity="precomputed", assign_labels="kmeans"
     ).fit(adj)
 
     labels = clustering.labels_
@@ -87,6 +88,7 @@ def apply_spectral(g, n_clusters):
         communities.setdefault(label, []).append(idx)
 
     return list(communities.values())
+
 
 def apply_clustering(g, algorithm: ClusteringAlgorithm, preferred_size: int):
     """
@@ -107,7 +109,15 @@ def apply_clustering(g, algorithm: ClusteringAlgorithm, preferred_size: int):
     else:
         raise ValueError(f"Unsupported algorithm: {algorithm}")
 
-def split_communities_recursively(g, preferred_size, min_size, max_depth=10, depth=0, algorithm=ClusteringAlgorithm.Leiden):
+
+def split_communities_recursively(
+    g,
+    preferred_size,
+    min_size,
+    max_depth=10,
+    depth=0,
+    algorithm=ClusteringAlgorithm.Leiden,
+):
     """
     Recursively splits oversized communities using the selected algorithm until preferred size is met.
 
@@ -143,6 +153,32 @@ def split_communities_recursively(g, preferred_size, min_size, max_depth=10, dep
 
     return final_partition
 
+
+def write_partition(partition, output_dir):
+    """
+    Writes the community partition to a JSON file in inverted form:
+    from {node: community} to {community: [nodes]}.
+
+    Parameters:
+        partition (dict): Mapping from node name to community ID.
+        output_dir (str): Directory where the partition file will be saved.
+    """
+    # Invertimos el diccionario
+    inverted = defaultdict(list)
+    for node, community in partition.items():
+        inverted[community].append(node)
+
+    # Convertimos defaultdict a dict normal para el JSON
+    inverted = dict(inverted)
+
+    # Nos aseguramos de que el directorio existe
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+    # Guardamos en JSON
+    with open(f"{output_dir}/partition.json", "w") as f:
+        json.dump(inverted, f, indent=4)
+
+
 def write_communities(g, partition, output_folder):
     """
     Writes community assignments to individual CSV files and saves inter-community edges.
@@ -176,3 +212,28 @@ def write_communities(g, partition, output_folder):
             t = g.vs[edge.target]["name"]
             if partition.get(s) != partition.get(t):
                 writer.writerow([s, t, edge["weight"]])
+
+def palette_color_for(c, palette="tab20", default_color="#000000"):
+    """
+    Returns a color from a given palette corresponding to an integer ID.
+    
+    Parameters:
+        c (int): The ID of the node.
+        palette (str): The name of the color palette.
+        default_color (str): The default color to return if ID is None.
+    
+    Returns:
+        str: The color in hexadecimal format.
+    """
+    # If the ID is None, return the default color
+    if c is None:
+        return default_color
+    else:
+        # Get the list of colors from the palette
+        cmap = plt.get_cmap(palette)
+        n_colors = cmap.N
+        # Convert the ID to an index within the palette
+        idx = int(c) % n_colors
+        rgb = cmap(idx)[:3]
+        # Convert to hexadecimal format
+        return '#%02x%02x%02x' % tuple(int(255*x) for x in rgb)

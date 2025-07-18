@@ -23,7 +23,8 @@ dependencies = [
     "leidenalg == 0.10.2",
     "igraph == 0.11.9",
     "scikit-learn == 1.7.0",
-    "numpy == 2.2.6"
+    "numpy == 2.2.6",
+    "graphistry == 0.39.1"
 ]
 
 [project.scripts]

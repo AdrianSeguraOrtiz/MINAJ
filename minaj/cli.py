@@ -6,7 +6,8 @@ import typer
 from geneci.main import SimpleConsensusCriteria, Technique
 from rich.console import Console
 
-from minaj.main import main_cluster_network, main_modular_inference
+from minaj.main import (main_calculate_community_metrics, main_cluster_network, main_modular_inference,
+                        main_plot_communities)
 from minaj.utils import ClusteringAlgorithm
 
 console = Console()
@@ -19,13 +20,14 @@ HEADER = """[bold gold1]
 (_/   '     (__ /   (_/   '    (_/     /   /      
                                       (__ /      
 [/bold gold1]
-[bright_white]Modular Inference for Network Aggregation and Joint learning[/bright_white]
+[bright_white][bold gold1]M[/bold gold1]odular [bold gold1]I[/bold gold1]nference for [bold gold1]N[/bold gold1]etwork [bold gold1]A[/bold gold1]ggregation and [bold gold1]J[/bold gold1]oint learning[/bright_white]
 [dim]Author: Adrián Segura Ortiz <adrianseor.99@gmail.com>[/dim]
 """
 
 console.print(HEADER)
 
 app = typer.Typer(rich_markup_mode="rich")
+
 
 @app.command()
 def modular_inference(
@@ -78,6 +80,7 @@ def modular_inference(
         output_dir=output_dir,
     )
 
+
 @app.command()
 def cluster_network(
     confidence_list: str = typer.Option(
@@ -96,7 +99,7 @@ def cluster_network(
 ):
 
     """
-    Main pipeline to read a network, apply community detection, and save results.
+    Apply clustering to a network based on a confidence list.
     """
 
     main_cluster_network(
@@ -106,3 +109,46 @@ def cluster_network(
         min_size=min_size,
         output_folder=output_folder,
     )
+
+
+@app.command()
+def plot_communities(
+    complete_network: Path = typer.Option(
+        ..., exists=True, file_okay=True, help="Path to the complete network file."
+    ),
+    partition: Path = typer.Option(
+        ..., exists=True, file_okay=True, help="Path to the partition file."
+    ),
+    username: str = typer.Option(
+        "graphistry", help="Graphistry username for visualization."
+    ),
+    password: str = typer.Option(
+        "graphistry", help="Graphistry password for visualization."
+    ),
+    weight_threshold: float = typer.Option(
+        0.1, help="Minimum edge weight to include in visualization."
+    ),
+    include_community_metrics: bool = typer.Option(
+        True, help="Whether to include community metrics in the visualization."
+    ),
+):
+    """
+    Plot communities from a partitioned network.
+    """
+
+    main_plot_communities(complete_network, partition, username, password, weight_threshold, include_community_metrics)
+    
+    
+@app.command()
+def calculate_community_metrics(
+    complete_network: Path = typer.Option(
+        ..., exists=True, file_okay=True, help="Path to the complete network file."
+    ),
+    partition: Path = typer.Option(
+        ..., exists=True, file_okay=True, help="Path to the partition file."
+    ),
+):
+    """
+    Calculate and print community metrics from a partitioned network.
+    """
+    main_calculate_community_metrics(complete_network, partition)
