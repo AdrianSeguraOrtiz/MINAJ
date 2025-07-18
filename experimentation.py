@@ -72,19 +72,12 @@ consensus_options = [
     SimpleConsensusCriteria.MeanWeights,
 ]
 clustering_algorithms = [ca for ca in ClusteringAlgorithm]
-preferred_size = [50, 100, 150, 200]
+preferred_size = [25, 50, 100, 150, 200]
 parameter_combinations = [
     (consensus, clustering_algorithm, size)
     for consensus in consensus_options
     for clustering_algorithm in clustering_algorithms
     for size in preferred_size
-]
-
-parameter_combinations = [
-    (SimpleConsensusCriteria.RankAverage, ClusteringAlgorithm.Leiden, 100),
-    (SimpleConsensusCriteria.MeanWeights, ClusteringAlgorithm.Leiden, 100),
-    (SimpleConsensusCriteria.RankAverage, ClusteringAlgorithm.Spectral, 100),
-    (SimpleConsensusCriteria.MeanWeights, ClusteringAlgorithm.Spectral, 100),
 ]
 
 # 1. Inferencia modular de todas las redes con todas las opciones de parametros
@@ -172,10 +165,15 @@ for expression_file in expression_data:
 
         ## Calcular precisiones
         df_all_aupr = pd.DataFrame(
-            columns=["Community", "Size", "Density", "Diameter", "Isolation", "Mean Degree", "Median Degree", "Mean Weight", "Median Weight", "Technique", "Group", "AUPR"]
+            columns=["Community", "Size", "Density", "Diameter", "Isolation", "Mean_Degree", "Median_Degree", "Mean_Weight", "Median_Weight", "Technique", "Group", "AUPR"]
         )
         df_all_auroc = pd.DataFrame(
-            columns=["Community", "Size", "Density", "Diameter", "Isolation", "Mean Degree", "Median Degree", "Mean Weight", "Median Weight", "Technique", "Group", "AUROC"]
+            columns=["Community", "Size", "Density", "Diameter", "Isolation", "Mean_Degree", "Median_Degree", "Mean_Weight", "Median_Weight", "Technique", "Group", "AUROC"]
+        )
+        ## Calcular métricas de las comunidades
+        metrics = main_calculate_community_metrics(
+            f"{experiment_folder}/global_inference/consensus_global_network.csv",
+            f"{experiment_folder}/modules/networks/partition.json",
         )
         for community_name in community_names:
             ## Comprobar si la comunidad tiene suficientes enlaces positivos en el gold standard
@@ -263,23 +261,20 @@ for expression_file in expression_data:
             )
 
             ## Agregar resultados al DataFrame global
-            metrics = main_calculate_community_metrics(
-                f"{experiment_folder}/global_inference/consensus_global_network.csv",
-                f"{experiment_folder}/modules/networks/partition.json",
-            )
+            community_number = community_name.removesuffix("_expression").removeprefix("community_")
             df_all_aupr = pd.concat(
                 [
                     df_all_aupr,
                     df_aupr.assign(
-                        Community=community_name,
-                        Size=metrics[community_name]["size"],
-                        Density=metrics[community_name]["density"],
-                        Diameter=metrics[community_name]["diameter"],
-                        Isolation=metrics[community_name]["isolation"],
-                        Mean_Degree=metrics[community_name]["mean_degree"],
-                        Median_Degree=metrics[community_name]["median_degree"],
-                        Mean_Weight=metrics[community_name]["mean_weight"],
-                        Median_Weight=metrics[community_name]["median_weight"],
+                        Community=community_number,
+                        Size=metrics[community_number]["size"],
+                        Density=metrics[community_number]["density"],
+                        Diameter=metrics[community_number]["diameter"],
+                        Isolation=metrics[community_number]["isolation"],
+                        Mean_Degree=metrics[community_number]["mean_degree"],
+                        Median_Degree=metrics[community_number]["median_degree"],
+                        Mean_Weight=metrics[community_number]["mean_weight"],
+                        Median_Weight=metrics[community_number]["median_weight"],
                     ),
                 ],
                 ignore_index=True,
@@ -288,15 +283,15 @@ for expression_file in expression_data:
                 [
                     df_all_auroc,
                     df_auroc.assign(
-                        Community=community_name,
-                        Size=metrics[community_name]["size"],
-                        Density=metrics[community_name]["density"],
-                        Diameter=metrics[community_name]["diameter"],
-                        Isolation=metrics[community_name]["isolation"],
-                        Mean_Degree=metrics[community_name]["mean_degree"],
-                        Median_Degree=metrics[community_name]["median_degree"],
-                        Mean_Weight=metrics[community_name]["mean_weight"],
-                        Median_Weight=metrics[community_name]["median_weight"],
+                        Community=community_number,
+                        Size=metrics[community_number]["size"],
+                        Density=metrics[community_number]["density"],
+                        Diameter=metrics[community_number]["diameter"],
+                        Isolation=metrics[community_number]["isolation"],
+                        Mean_Degree=metrics[community_number]["mean_degree"],
+                        Median_Degree=metrics[community_number]["median_degree"],
+                        Mean_Weight=metrics[community_number]["mean_weight"],
+                        Median_Weight=metrics[community_number]["median_weight"],
                     ),
                 ],
                 ignore_index=True,
